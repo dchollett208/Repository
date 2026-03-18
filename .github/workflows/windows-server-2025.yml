@@ -1,0 +1,65 @@
+services:
+  windows:
+    image: dockurr/windows
+    container_name: windows-server-2025
+    environment:
+      VERSION: "11"
+      USERNAME: "dilovan"
+      PASSWORD: "dilovan1"
+      RAM_SIZE: "16G"
+      CPU_CORES: "4"
+      DISK_SIZE: "400G"
+      DISK2_SIZE: "100G"
+      LANGUAGE: "English"
+      REGION: "en_US"
+      KEYBOARD: "fr"
+      # Add Tailscale auth key as environment variable
+      TAILSCALE_AUTH_KEY: "tskey-auth-yourkeyhere"  # Replace with your actual key
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "8006:8006"
+      - "3389:3389/tcp"
+      - "3389:3389/udp"
+    stop_grace_period: 2m
+    restart: unless-stopped
+    # Add custom commands to run after container starts
+    command: >
+      powershell -Command "
+        # Wait for Windows to fully boot
+        Start-Sleep -Seconds 60;
+        
+        # Download and install Tailscale
+        Write-Host 'Installing Tailscale...';
+        $tsUrl = 'https://pkgs.tailscale.com/stable/tailscale-setup-1.94.2-amd64.msi';
+        $installerPath = \"$env:TEMP\tailscale.msi\";
+        Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath;
+        Start-Process msiexec.exe -ArgumentList '/i', \"`\"$installerPath`\"\", '/quiet', '/norestart' -Wait;
+        Remove-Item $installerPath -Force;
+        
+        # Connect to Tailscale
+        Write-Host 'Connecting to Tailscale...';
+        & \"$env:ProgramFiles\Tailscale\tailscale.exe\" up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=windows-docker-$env:COMPUTERNAME --reset;
+        
+        # Wait for IP and display it
+        $tsIP = $null;
+        $retries = 0;
+        while (-not $tsIP -and $retries -lt 20) {
+            $tsIP = & \"$env:ProgramFiles\Tailscale\tailscale.exe\" ip -4;
+            Start-Sleep -Seconds 3;
+            $retries++;
+        }
+        
+        if ($tsIP) {
+            Write-Host 'Tailscale IP: $tsIP' -ForegroundColor Green;
+            Write-Host 'You can now RDP to: $tsIP:3389' -ForegroundColor Green;
+        } else {
+            Write-Host 'Warning: Tailscale IP not assigned' -ForegroundColor Yellow;
+        }
+        
+        # Keep container running
+        Write-Host 'Setup complete. Container is running.' -ForegroundColor Green;
+      "
