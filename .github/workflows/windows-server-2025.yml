@@ -1,4 +1,4 @@
-name: Proxy Checker
+name: windows-server-2025
 
 on:
   workflow_dispatch:
